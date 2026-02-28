@@ -19,7 +19,7 @@ pub enum Value {
     Object(Vec<(String, Value)>),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum Marker {
     Null = b'Z',

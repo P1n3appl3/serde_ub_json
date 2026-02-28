@@ -2,7 +2,8 @@ use std::mem::size_of;
 use std::str;
 
 use serde::de::{
-    DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess, Visitor,
+    DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess,
+    Visitor,
 };
 use serde::Deserialize;
 
@@ -25,10 +26,7 @@ pub struct Deserializer<'de> {
 
 impl<'de> Deserializer<'de> {
     pub fn new(bytes: &'de [u8]) -> Deserializer<'de> {
-        Deserializer {
-            bytes,
-            of_type: None,
-        }
+        Deserializer { bytes, of_type: None }
     }
 
     fn peek_byte(&self) -> Result<u8> {
@@ -257,8 +255,9 @@ impl<'a, 'de: 'a> serde::de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         match self.take_or_read_marker()? {
-            Marker::U8 => visitor.visit_u16((self.read_u8()?) as u16),
-            _ => Err(Error::Expected(vec![Marker::U8])),
+            Marker::I16 => visitor.visit_u16((self.read_i16()?) as u16),
+            Marker::I8 => visitor.visit_u16((self.read_i8()?) as u16),
+            _ => Err(Error::Expected(vec![Marker::I16, Marker::I8])),
         }
     }
 
@@ -267,8 +266,10 @@ impl<'a, 'de: 'a> serde::de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         match self.take_or_read_marker()? {
-            Marker::U8 => visitor.visit_u32((self.read_u8()?) as u32),
-            _ => Err(Error::Expected(vec![Marker::U8])),
+            Marker::I32 => visitor.visit_u32((self.read_i32()?) as u32),
+            Marker::I16 => visitor.visit_u32((self.read_i16()?) as u32),
+            Marker::I8 => visitor.visit_u32((self.read_i8()?) as u32),
+            _ => Err(Error::Expected(vec![Marker::I32, Marker::I16, Marker::I8])),
         }
     }
 
@@ -277,8 +278,16 @@ impl<'a, 'de: 'a> serde::de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         match self.take_or_read_marker()? {
-            Marker::U8 => visitor.visit_u64((self.read_u8()?) as u64),
-            _ => Err(Error::Expected(vec![Marker::U8])),
+            Marker::I64 => visitor.visit_u64(self.read_i64()? as u64),
+            Marker::I32 => visitor.visit_u64((self.read_i32()?) as u64),
+            Marker::I16 => visitor.visit_u64((self.read_i16()?) as u64),
+            Marker::I8 => visitor.visit_u64((self.read_i8()?) as u64),
+            _ => Err(Error::Expected(vec![
+                Marker::I64,
+                Marker::I32,
+                Marker::I16,
+                Marker::I8,
+            ])),
         }
     }
 
@@ -440,7 +449,11 @@ impl<'a, 'de: 'a> serde::de::Deserializer<'de> for &'a mut Deserializer<'de> {
         self.deserialize_unit(visitor)
     }
 
-    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
+    fn deserialize_newtype_struct<V>(
+        self,
+        _name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -479,11 +492,7 @@ impl<'a, 'de: 'a> serde::de::Deserializer<'de> for &'a mut Deserializer<'de> {
                     de: self,
                     len,
                     of_type,
-                    trailer: if len.is_some() {
-                        None
-                    } else {
-                        Some(Marker::ArrayEnd)
-                    },
+                    trailer: if len.is_some() { None } else { Some(Marker::ArrayEnd) },
                 })?;
                 Ok(value)
             }
@@ -542,11 +551,7 @@ impl<'a, 'de: 'a> serde::de::Deserializer<'de> for &'a mut Deserializer<'de> {
                     de: self,
                     len,
                     of_type,
-                    trailer: if len.is_some() {
-                        None
-                    } else {
-                        Some(Marker::ObjectEnd)
-                    },
+                    trailer: if len.is_some() { None } else { Some(Marker::ObjectEnd) },
                 })?;
                 Ok(value)
             }
@@ -821,7 +826,11 @@ impl<'de, 'a> VariantAccess<'de> for ItemAccess<'a, 'de> {
         serde::de::Deserializer::deserialize_seq(self.de, visitor)
     }
 
-    fn struct_variant<V>(self, _fields: &'static [&'static str], visitor: V) -> Result<V::Value>
+    fn struct_variant<V>(
+        self,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -859,14 +868,14 @@ mod tests {
     fn deserializing_big_t_value_can_produce_true() {
         let data = b"T";
         let value = from_bytes::<'_, bool>(data).unwrap();
-        assert_eq!(value, true);
+        assert!(value);
     }
 
     #[test]
     fn deserializing_big_f_value_can_produce_false() {
         let data = b"F";
         let value = from_bytes::<'_, bool>(data).unwrap();
-        assert_eq!(value, false);
+        assert!(!value);
     }
 
     #[test]
@@ -988,7 +997,7 @@ mod tests {
 
     #[test]
     fn deserializing_big_c_value_can_produce_char() {
-        let data = &[b'C', b'A'];
+        let data = b"CA";
 
         let value = from_bytes::<'_, char>(data).unwrap();
         assert_eq!(value, 'A');
@@ -1102,10 +1111,10 @@ mod tests {
 
     #[test]
     fn deserializing_big_z_value_can_produce_none() {
-        let data = &[b'Z'];
+        let data = b"Z";
 
         let value = from_bytes::<'_, Option<String>>(data).unwrap();
-        assert!(matches!(value, None));
+        assert!(value.is_none());
     }
 
     #[test]
@@ -1121,8 +1130,9 @@ mod tests {
 
     #[test]
     fn deserializing_big_z_value_can_produce_unit() {
-        let data = &[b'Z'];
+        let data = b"Z";
 
+        #[allow(clippy::let_unit_value)]
         let value = from_bytes::<'_, ()>(data).unwrap();
         assert_eq!(value, ());
     }
@@ -1185,12 +1195,7 @@ mod tests {
         let value = from_bytes::<'_, Vec<String>>(&data).unwrap();
         assert_eq!(
             value,
-            vec![
-                "t".to_string(),
-                "te".to_string(),
-                "tes".to_string(),
-                "test".to_string(),
-            ]
+            vec!["t".to_string(), "te".to_string(), "tes".to_string(), "test".to_string(),]
         );
     }
 
@@ -1239,17 +1244,13 @@ mod tests {
         let value = from_bytes::<'_, Vec<String>>(&data).unwrap();
         assert_eq!(
             value,
-            vec![
-                "t".to_string(),
-                "te".to_string(),
-                "tes".to_string(),
-                "test".to_string(),
-            ]
+            vec!["t".to_string(), "te".to_string(), "tes".to_string(), "test".to_string(),]
         );
     }
 
     #[test]
-    fn deserializing_open_bracket_with_small_i_values_of_type_i_and_of_len_i_can_produce_vec() {
+    fn deserializing_open_bracket_with_small_i_values_of_type_i_and_of_len_i_can_produce_vec(
+    ) {
         let mut data = vec![b'['];
         data.extend_from_slice(b"$");
         data.extend_from_slice(b"i");
@@ -1266,7 +1267,8 @@ mod tests {
     }
 
     #[test]
-    fn deserializing_open_bracket_with_string_values_of_type_big_s_and_of_len_i_can_produce_vec() {
+    fn deserializing_open_bracket_with_string_values_of_type_big_s_and_of_len_i_can_produce_vec(
+    ) {
         let mut data = vec![b'['];
         data.extend_from_slice(b"$");
         data.extend_from_slice(b"S");
@@ -1290,12 +1292,7 @@ mod tests {
         let value = from_bytes::<'_, Vec<String>>(&data).unwrap();
         assert_eq!(
             value,
-            vec![
-                "t".to_string(),
-                "te".to_string(),
-                "tes".to_string(),
-                "test".to_string(),
-            ]
+            vec!["t".to_string(), "te".to_string(), "tes".to_string(), "test".to_string(),]
         );
     }
 
@@ -1337,6 +1334,14 @@ mod tests {
     }
 
     #[test]
+    fn u8_length_for_key() {
+        let data = b"{U\x011SU\x012}";
+        let expected = [("1".to_owned(), "2".to_owned())].into_iter().collect();
+        let value: HashMap<String, String> = from_bytes(data.as_slice()).unwrap();
+        assert_eq!(value, expected);
+    }
+
+    #[test]
     fn deserializing_open_and_close_brace_with_small_i_values_can_produce_map() {
         let mut data = vec![b'{'];
 
@@ -1355,10 +1360,7 @@ mod tests {
         data.extend_from_slice(b"}");
 
         let value = from_bytes::<'_, HashMap<String, i8>>(&data).unwrap();
-        assert_eq!(
-            value,
-            HashMap::from([("t".to_string(), 1), ("test".to_string(), 4)])
-        );
+        assert_eq!(value, HashMap::from([("t".to_string(), 1), ("test".to_string(), 4)]));
     }
 
     #[test]
@@ -1413,10 +1415,7 @@ mod tests {
         data.extend_from_slice(&4i8.to_be_bytes());
 
         let value = from_bytes::<'_, HashMap<String, i8>>(&data).unwrap();
-        assert_eq!(
-            value,
-            HashMap::from([("t".to_string(), 1), ("test".to_string(), 4)])
-        );
+        assert_eq!(value, HashMap::from([("t".to_string(), 1), ("test".to_string(), 4)]));
     }
 
     #[test]
@@ -1453,7 +1452,8 @@ mod tests {
     }
 
     #[test]
-    fn deserializing_open_brace_with_small_i_values_of_type_i_and_of_len_i_can_produce_map() {
+    fn deserializing_open_brace_with_small_i_values_of_type_i_and_of_len_i_can_produce_map()
+    {
         let mut data = vec![b'{'];
         data.extend_from_slice(b"$");
         data.extend_from_slice(b"i");
@@ -1472,14 +1472,12 @@ mod tests {
         data.extend_from_slice(&4i8.to_be_bytes());
 
         let value = from_bytes::<'_, HashMap<String, i8>>(&data).unwrap();
-        assert_eq!(
-            value,
-            HashMap::from([("t".to_string(), 1), ("test".to_string(), 4)])
-        );
+        assert_eq!(value, HashMap::from([("t".to_string(), 1), ("test".to_string(), 4)]));
     }
 
     #[test]
-    fn deserializing_open_brace_with_string_values_of_type_big_s_and_of_len_i_can_produce_map() {
+    fn deserializing_open_brace_with_string_values_of_type_big_s_and_of_len_i_can_produce_map(
+    ) {
         let mut data = vec![b'{'];
         data.extend_from_slice(b"$");
         data.extend_from_slice(b"S");
@@ -1561,7 +1559,8 @@ mod tests {
     }
 
     #[test]
-    fn deserializing_open_and_close_brace_with_1_value_can_produce_newtype_variant_of_enum() {
+    fn deserializing_open_and_close_brace_with_1_value_can_produce_newtype_variant_of_enum()
+    {
         let mut data = vec![b'{'];
 
         data.extend_from_slice(b"i");
@@ -1655,7 +1654,8 @@ mod tests {
     }
 
     #[test]
-    fn deserializing_open_and_close_brace_with_1_value_can_produce_struct_variant_of_enum() {
+    fn deserializing_open_and_close_brace_with_1_value_can_produce_struct_variant_of_enum()
+    {
         let mut data = vec![b'{'];
 
         data.extend_from_slice(b"i");
